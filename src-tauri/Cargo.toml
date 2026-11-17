@@ -1,0 +1,48 @@
+[package]
+name = "driftkord"
+version = "1.0.0"
+edition = "2021"
+description = "DriftKord - bit-perfect Windows 11 music player"
+
+[[bin]]
+name = "DriftKord"
+path = "src/main.rs"
+
+[features]
+default = []
+
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "abort"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+ape-decoder = "0.3.2"
+base64 = "0.22"
+crossbeam-channel = "0.5.17"
+lofty = "0.22"
+md5 = "0.7"
+ureq = { version = "2.12", features = ["json"] }
+parking_lot = "0.12"
+rusqlite = { version = "0.42.0", features = ["bundled"] }
+rustfft = "6.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+souvlaki = "0.9.3"
+symphonia = { version = "0.5", features = ["all"] }
+tauri = { version = "2.12.5", features = ["unstable"] }
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-window-state = "2"
+walkdir = "2.5.0"
+wasapi = "0.27.0"
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Com", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_Shell_Common", "Win32_Media_MediaFoundation", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Registry", "Win32_Networking_WinSock"] }
+winreg = "0.56.0"
+
