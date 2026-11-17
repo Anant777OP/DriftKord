@@ -13,7 +13,7 @@ import { currentSong, Ident, songFor } from "./lyrics";
 import { getState, live, livePosition, setState, subscribe } from "./store";
 
 export type VideoStatus = "off" | "searching" | "ready" | "none" | "offline";
-export interface VideoInfo { status: VideoStatus; title: string; channel: string; index: number; total: number; offset: number }
+export interface VideoInfo { status: VideoStatus; title: string; channel: string; index: number; total: number; offset: number; reason?: string }
 
 interface Cand { id: string; title: string; channel: string; duration: number; verified: boolean; score: number }
 interface VState { id: string | null; t: number; d: number; paused: boolean; ready: boolean; at: number }
@@ -92,6 +92,8 @@ async function prefetchNext() {
 }
 
 let openSeq = 0;
+/** Last thing YouTube said that stopped a video (shown with "Can't play the music video"). */
+let lastReason = "";
 function openPick(fallbacks = 0) {
   const c = cands[pick];
   if (!c) return;
@@ -104,7 +106,7 @@ function openPick(fallbacks = 0) {
   window.setTimeout(() => {
     if (!stillWaiting()) return;
     if (fallbacks < 2 && pick + 1 < cands.length) { pick++; openPick(fallbacks + 1); return; }
-    window.setTimeout(() => { if (stillWaiting()) info({ status: "offline" }); }, 12000);
+    window.setTimeout(() => { if (stillWaiting()) info({ status: "offline", reason: lastReason }); }, 12000);
   }, 13000);
   vs = { id: null, t: 0, d: 0, paused: true, ready: false, at: 0 };
   lastRate = 1;
@@ -135,7 +137,7 @@ async function find(s: Ident) {
   } catch { /* search instead */ }
   const items = await searchOnce(queryFor(s));
   if (my !== token) return;
-  if (!items) { info({ status: "offline" }); return; }
+  if (!items) { info({ status: "offline", reason: lastReason }); return; }
   // when YouTube Music itself is the source, its own video id is a perfect match
   const ytId = getState().ytActive ? getState().yt?.videoId : null;
   cands = rank(items, s, ytId);
@@ -265,7 +267,13 @@ export function initVideo() {
   started = true;
   listen<any>("video-event", (e) => {
     const p = e.payload;
+    if (p.kind === "diag") {
+      lastReason = String(p.reason || "");
+      if (getState().videoInfo.status === "offline") info({ reason: lastReason });
+      return;
+    }
     if (p.kind === "results") {
+      if (p.error) lastReason = String(p.error).replace(/^Error:\s*/, "");
       const cb = pending.get(p.tag || "");
       cb?.(Array.isArray(p.items) ? p.items : null);
       return;

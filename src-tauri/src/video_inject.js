@@ -76,10 +76,38 @@
 
   // ---------------------------------------------------------------- watch page
   const video = () => document.querySelector('video.html5-main-video') || document.querySelector('#movie_player video') || document.querySelector('video');
+  // YouTube's blocking dialogs: cookie consent (we pick "Reject all"), "ad blockers are not allowed",
+  // "video paused. Continue watching?". Returns a short reason when something blocks playback.
+  function unblock() {
+    if (/(^|\.)consent\.(youtube|google)\.com$/.test(location.hostname)) {
+      const b = [...document.querySelectorAll('button, input[type=submit]')].find((x) => /reject all|alle ablehnen|tout refuser|rechazar todo/i.test(x.textContent || x.value || ''));
+      if (b) b.click();
+      return 'YouTube cookie consent page';
+    }
+    const wall = document.querySelector('ytd-enforcement-message-view-model, tp-yt-paper-dialog ytd-enforcement-message-view-model');
+    if (wall) {
+      const close = wall.querySelector('#dismiss-button button, button[aria-label*="lose" i], #dismiss-button, yt-button-shape button');
+      if (close) close.click();
+      return 'YouTube ad-blocker warning';
+    }
+    const still = [...document.querySelectorAll('yt-confirm-dialog-renderer, ytd-popup-container tp-yt-paper-dialog')].find((d) => /continue watching|still watching/i.test(d.textContent || ''));
+    if (still) { const b = still.querySelector('#confirm-button button, #confirm-button, button'); if (b) b.click(); }
+    const p = document.getElementById('movie_player');
+    const pr = p && typeof p.getPlayerResponse === 'function' ? p.getPlayerResponse() : null;
+    const ps = pr && pr.playabilityStatus;
+    if (ps && ps.status && ps.status !== 'OK') return (ps.reason || ps.status).toString().slice(0, 120);
+    const err = document.querySelector('.ytp-error-content-wrap-reason, .ytp-error .ytp-error-content');
+    if (err && err.offsetParent && err.textContent.trim()) return err.textContent.trim().slice(0, 120);
+    return '';
+  }
+  let lastReason = '';
+
   let wantPlaying = false;
   let stuck = { id: '', since: 0, tries: 0 };
   let wasAd = false;
   setInterval(() => {
+    const reason = unblock();
+    if (reason !== lastReason) { lastReason = reason; post({ kind: 'diag', reason }); }
     if (location.pathname !== '/watch') return;
     style();
     const el = video();
@@ -130,7 +158,7 @@
       const cfg = window.ytcfg && window.ytcfg.get ? window.ytcfg : null;
       const key = cfg && cfg.get('INNERTUBE_API_KEY');
       const ctx = cfg && cfg.get('INNERTUBE_CONTEXT');
-      if (!key || !ctx) throw new Error('no player config');
+      if (!key || !ctx) throw new Error(unblock() || 'YouTube page did not load');
       const r = await fetch('/youtubei/v1/search?prettyPrint=false&key=' + encodeURIComponent(key), {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context: ctx, query: q, params: 'EgIQAQ==' }),

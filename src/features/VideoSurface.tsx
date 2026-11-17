@@ -17,7 +17,7 @@ export function VideoSurface({ kind, className }: { kind: SurfaceKind; className
       <div className="vs-status">
         {info.status === "searching" && <><span className="lyr-spinner" aria-hidden /><span>Finding the music video…</span></>}
         {info.status === "none" && <><Icon name="cinema" size={30} /><span>No music video found for this song.</span><button className="btn small" onClick={refindVideo}>Search again</button></>}
-        {info.status === "offline" && <><Icon name="cinema" size={30} /><span>Can't reach YouTube right now.</span><button className="btn small" onClick={refindVideo}>Try again</button></>}
+        {info.status === "offline" && <><Icon name="cinema" size={30} /><span>Can't play the music video right now.</span>{info.reason && <small className="vs-reason">YouTube: {info.reason}</small>}<button className="btn small" onClick={refindVideo}>Try again</button></>}
         {info.status === "off" && <span className="muted">Play something to see its music video.</span>}
       </div>
     </div>

@@ -149,9 +149,21 @@ pub fn status() -> ShellStatus {
 }
 
 pub fn open_default_apps() -> Result<(), String> {
-    std::process::Command::new("explorer.exe")
-        .arg(format!("ms-settings:defaultapps?registeredAppUser={}", APP_NAME.replace(' ', "%20")))
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    // Windows only lists DriftKord on its Default-apps page once it's registered as a music player
+    if !status().registered {
+        register()?;
+    }
+    let open = |uri: &str| -> bool {
+        let r = unsafe { ShellExecuteW(None, &HSTRING::from("open"), &HSTRING::from(uri), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL) };
+        r.0 as isize > 32
+    };
+    // straight to DriftKord's own page in Settings → Apps → Default apps; fall back to the list
+    if open(&format!("ms-settings:defaultapps?registeredAppUser={}", APP_NAME.replace(' ', "%20"))) || open("ms-settings:defaultapps") {
+        Ok(())
+    } else {
+        Err("Couldn't open Windows Settings → Default apps".into())
+    }
 }
