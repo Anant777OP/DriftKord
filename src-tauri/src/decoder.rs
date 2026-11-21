@@ -51,6 +51,44 @@ pub const AUDIO_EXTENSIONS: &[&str] = &[
 /// Extra file types accepted when dropped/opened directly (not picked up by folder scans).
 const IMPORT_ONLY: &[&str] = &["mp4", "m4v", "mkv", "mov", "iso", "cue"];
 
+/// Picked up by library folder scans: audio files, plus video containers that hold music —
+/// Dolby (Atmos / E-AC-3, AC-3, TrueHD) or DTS audio, or no video track at all. Ordinary videos
+/// in a music folder are left out.
+pub fn is_scannable(path: &Path) -> bool {
+    if is_audio_file(path) {
+        return true;
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(ext.as_str(), "mp4" | "m4v" | "mov" | "mkv" | "webm") && holds_music(path, &ext)
+}
+
+/// Look at the start and end of a video container (MP4 keeps its index at either end).
+fn holds_music(path: &Path, ext: &str) -> bool {
+    let Ok(mut f) = File::open(path) else { return false };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut head = vec![0u8; (4u64 << 20).min(len) as usize];
+    if f.read_exact(&mut head).is_err() {
+        return false;
+    }
+    let mut tail = Vec::new();
+    if len > 8 << 20 {
+        tail = vec![0u8; 4 << 20];
+        if f.seek(SeekFrom::End(-(4 << 20))).is_err() || f.read_exact(&mut tail).is_err() {
+            tail.clear();
+        }
+    }
+    let has = |pat: &[u8]| head.windows(pat.len()).any(|w| w == pat) || tail.windows(pat.len()).any(|w| w == pat);
+    if ext == "mkv" || ext == "webm" {
+        let dolby = has(b"A_EAC3") || has(b"A_AC3") || has(b"A_TRUEHD") || has(b"A_DTS");
+        let video = has(b"V_MPEG") || has(b"V_VP") || has(b"V_AV1") || has(b"V_MS/");
+        dolby || (!video && has(b"A_"))
+    } else {
+        let dolby = has(b"ec-3") || has(b"ac-3") || has(b"dec3") || has(b"dac3") || has(b"mlpa") || has(b"ac-4") || has(b"dac4");
+        let video = has(b"vide");
+        dolby || (!video && has(b"soun"))
+    }
+}
+
 pub fn is_importable(path: &Path) -> bool {
     is_audio_file(path)
         || path

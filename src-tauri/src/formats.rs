@@ -1122,6 +1122,8 @@ mod mf {
                 let duration = if matches!(ext.as_str(), "ec3" | "eac3" | "ac3") { raw_dolby_duration(path).unwrap_or(duration) } else { duration };
                 let codec = if sub == MFAudioFormat_Dolby_DDPlus {
                     if atmos { "Dolby Atmos (DD+)".to_string() } else { "Dolby Digital Plus".to_string() }
+                } else if sub == MFAudioFormat_Dolby_AC4 || sub == MFAudioFormat_Dolby_AC4_V1 || sub == MFAudioFormat_Dolby_AC4_V2 {
+                    "Dolby AC-4 (Atmos)".to_string()
                 } else if sub == MFAudioFormat_Dolby_AC3 || sub == MFAudioFormat_Dolby_AC3_SPDIF {
                     "Dolby Digital".to_string()
                 } else if sub == MFAudioFormat_WMAudioV8 || sub == MFAudioFormat_WMAudioV9 || sub == MFAudioFormat_WMAudio_Lossless {

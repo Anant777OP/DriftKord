@@ -2,7 +2,7 @@
 //! watched folders, play statistics and key/value settings.
 
 use crate::analysis::TrackAnalysis;
-use crate::decoder::is_audio_file;
+use crate::decoder::is_scannable;
 use crate::metadata;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -324,7 +324,7 @@ impl Library {
                 let ext = entry.path().extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
                 if ext == "cue" || ext == "iso" {
                     images.push(entry.path().to_path_buf());
-                } else if is_audio_file(entry.path()) {
+                } else if is_scannable(entry.path()) {
                     files.push(entry.path().to_path_buf());
                 }
             }
