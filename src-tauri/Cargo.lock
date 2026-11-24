@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "driftkord"
-version = "1.0.0"
+version = "1.1.1"
 dependencies = [
  "ape-decoder",
  "base64 0.22.1",
