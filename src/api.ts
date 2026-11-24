@@ -31,6 +31,11 @@ export type EqChannel = "st" | "l" | "r" | "m" | "s";
 export interface EqBand { freq: number; gainDb: number; q: number; kind: EqKind; channel?: EqChannel; enabled?: boolean }
 export type EraId = "off" | "tube" | "tape" | "vinyl" | "stadium" | "gramophone" | "radio" | "jukebox" | "eighttrack" | "boombox" | "cd" | "telephone" | "mp3" | "loudness" | "club" | "lofi" | "hall";
 export interface EngineOptions { ramBuffer: boolean; ramLimitMb: number; resampler: "sinc" | "fast"; spatial: "binaural" | "stereo"; ffmpegPath: string }
+export interface ArtistBio {
+  name: string; found: boolean; kind: string; description: string; origin: string; active: string; genres: string[];
+  image?: string | null; summary: string; sections: { title: string; text: string }[];
+  wikipediaUrl?: string | null; musicbrainzUrl?: string | null; fetchedAt: number;
+}
 export interface Renderer { id: string; name: string; model: string; avUrl: string; rcUrl: string }
 export interface CastStatus { state: string; position: number; duration: number }
 export interface Speaker { azimuth: number; distance: number; source: "L" | "R" | "C" }
@@ -179,12 +184,14 @@ export const api = {
   discordTest: () => invoke<void>("discord_test"),
   streamLoaded: () => invoke<string[]>("stream_loaded"),
   ytStreamStats: () => invoke<[number, number]>("yt_stream_stats"),
-  videoSearch: (query: string, tag?: string) => invoke<void>("video_search", { query, tag: tag ?? null }),
+  videoSearch: (query: string, tag?: string, cont?: string) => invoke<void>("video_search", { query, tag: tag ?? null, cont: cont ?? null }),
+  artistBio: (artist: string, refresh?: boolean) => invoke<ArtistBio>("artist_bio", { artist, refresh: refresh ?? null }),
   videoWarm: () => invoke<void>("video_warm"),
   videoOpen: (id: string, start: number) => invoke<void>("video_open", { id, start }),
   videoShowAt: (x: number, y: number, w: number, h: number) => invoke<void>("video_show_at", { x, y, w, h }),
   videoHide: () => invoke<void>("video_hide"),
   videoCmd: (cmd: "play" | "pause" | "seek" | "rate", arg?: number) => invoke<void>("video_cmd", { cmd, arg: arg ?? null }),
+  videoQuality: (quality: string) => invoke<void>("video_quality", { quality }),
   videoClose: () => invoke<void>("video_close"),
   modsList: () => invoke<ModInfo[]>("mods_list"),
   modsImport: (paths: string[]) => invoke<string[]>("mods_import", { paths }),

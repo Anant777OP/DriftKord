@@ -114,7 +114,7 @@ export interface State {
   customTheme: CustomTheme | null;
   /** Custom theme wallpaper (data URL, stored separately from prefs) */
   customBg: string | null;
-  fullPlayerTab: "lyrics" | "queue";
+  fullPlayerTab: "lyrics" | "queue" | "artist";
   /** recent scrobbles and what each service answered (newest first) */
   scrobbleLog: { title: string; artist: string; at: number; kind: "scrobble" | "nowplaying"; results: { service: string; ok: boolean; message: string }[] }[];
   /** last Discord Rich Presence problem (null = fine) */

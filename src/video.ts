@@ -13,7 +13,23 @@ import { currentSong, Ident, songFor } from "./lyrics";
 import { getState, live, livePosition, setState, subscribe } from "./store";
 
 export type VideoStatus = "off" | "searching" | "ready" | "none" | "offline";
-export interface VideoInfo { status: VideoStatus; title: string; channel: string; index: number; total: number; offset: number; reason?: string }
+export interface VideoInfo { status: VideoStatus; title: string; channel: string; index: number; total: number; offset: number; reason?: string; more?: boolean; loadingMore?: boolean; quality?: string; levels?: string[] }
+
+/** Video quality choices: id is YouTube's level name. */
+export const VIDEO_QUALITIES: { id: string; label: string }[] = [
+  { id: "auto", label: "Auto" }, { id: "medium", label: "360p" }, { id: "large", label: "480p" }, { id: "hd720", label: "720p" },
+  { id: "hd1080", label: "1080p" }, { id: "hd1440", label: "1440p" }, { id: "hd2160", label: "4K" }, { id: "max", label: "Max" },
+];
+export const qualityLabel = (q?: string) => ({ tiny: "144p", small: "240p", medium: "360p", large: "480p", hd720: "720p", hd1080: "1080p", hd1440: "1440p", hd2160: "4K", highres: "8K" } as Record<string, string>)[q ?? ""] ?? "";
+let wantQuality = "hd1080";
+api.getSetting("videoQuality").then((v) => { if (v) wantQuality = v; }).catch(() => {});
+export const getVideoQuality = () => wantQuality;
+/** Choose the video quality (remembered). */
+export function setVideoQuality(q: string) {
+  wantQuality = q;
+  api.setSetting("videoQuality", q).catch(() => {});
+  api.videoQuality(q).catch(() => {});
+}
 
 interface Cand { id: string; title: string; channel: string; duration: number; verified: boolean; score: number }
 interface VState { id: string | null; t: number; d: number; paused: boolean; ready: boolean; at: number }
@@ -51,31 +67,45 @@ let offset = 0;
 let vs: VState = { id: null, t: 0, d: 0, paused: true, ready: false, at: 0 };
 let token = 0;
 let lastRate = 1;
-const pending = new Map<string, (items: Omit<Cand, "score">[] | null) => void>();
+const pending = new Map<string, (items: Omit<Cand, "score">[] | null, next: string) => void>();
+interface Found { items: Omit<Cand, "score">[]; next: string }
+// endless "Wrong video? Next": the search's next-page token, and other searches to try after that
+let nextToken = "";
+let moreQuery = "";
+let altIdx = 0;
+let loadingMore = false;
+const ALTS = (s: Ident) => {
+  const a = s.artist ? s.artist.split(/,|&/)[0].trim() : "";
+  return [`${a} ${s.title}`, `${a} ${s.title} live`, `${a} ${s.title} lyrics`, `${s.title} ${a} cover`, `${s.title} ${a} remix`, `${s.title}`].map((q) => q.trim());
+};
 let tagSeq = 0;
 
 const info = (patch: Partial<VideoInfo>) => setState((s) => ({ videoInfo: { ...s.videoInfo, ...patch } }));
 const cacheKey = (k: string) => `vid:${k}`;
 async function saveChoice() {
   if (!song) return;
-  await api.setSetting(cacheKey(song.key), JSON.stringify({ cands: cands.slice(0, 6), pick, offset, at: Date.now() })).catch(() => {});
+  await api.setSetting(cacheKey(song.key), JSON.stringify({ cands: cands.slice(0, Math.max(30, pick + 1)), pick, offset, at: Date.now() })).catch(() => {});
 }
 
 /** Ask the video view to search; several searches (current + next song) can be in flight. */
-function searchOnce(query: string): Promise<Omit<Cand, "score">[] | null> {
+function searchOnce(query: string, cont = ""): Promise<Found | null> {
   return new Promise((resolve) => {
     const tag = `q${++tagSeq}`;
-    const done = (items: Omit<Cand, "score">[] | null) => { window.clearTimeout(timer); window.clearTimeout(retry); pending.delete(tag); resolve(items); };
+    const done = (items: Omit<Cand, "score">[] | null, next = "") => { window.clearTimeout(timer); window.clearTimeout(retry); pending.delete(tag); resolve(items ? { items, next } : null); };
     const timer = window.setTimeout(() => done(null), 15000);
     // nothing back yet (page was busy)? ask once more
-    const retry = window.setTimeout(() => { if (pending.has(tag)) api.videoSearch(query, tag).catch(() => {}); }, 5000);
+    const retry = window.setTimeout(() => { if (pending.has(tag)) api.videoSearch(query, tag, cont || undefined).catch(() => {}); }, 5000);
     pending.set(tag, done);
-    api.videoSearch(query, tag).catch(() => done(null));
+    api.videoSearch(query, tag, cont || undefined).catch(() => done(null));
   });
 }
 const queryFor = (s: Ident) => `${s.artist ? s.artist.split(/,|&/)[0].trim() + " " : ""}${s.title} official music video`;
 function rank(items: Omit<Cand, "score">[], s: Ident, ytId: string | null | undefined): Cand[] {
-  return items.map((c) => ({ ...c, score: score(c, s) + (c.id === ytId ? 50 : 0) })).filter((c) => c.score > -50).sort((a, b) => b.score - a.score);
+  const all = items.map((c) => ({ ...c, score: score(c, s) + (c.id === ytId ? 50 : 0) }));
+  // good matches first (best first), then everything else the search found
+  const good = all.filter((c) => c.score > -50).sort((a, b) => b.score - a.score);
+  const rest = all.filter((c) => c.score <= -50);
+  return [...good, ...rest];
 }
 
 /** Look up the next song's video in the background so it starts instantly. */
@@ -85,9 +115,9 @@ async function prefetchNext() {
   if (!ident) return;
   const have = await api.getSetting(cacheKey(ident.key)).catch(() => null);
   if (have) return;
-  const items = await searchOnce(queryFor(ident));
-  if (!items) return;
-  const ranked = rank(items, ident, null);
+  const found = await searchOnce(queryFor(ident));
+  if (!found) return;
+  const ranked = rank(found.items, ident, null);
   if (ranked.length) await api.setSetting(cacheKey(ident.key), JSON.stringify({ cands: ranked.slice(0, 6), pick: 0, offset: 0, at: Date.now() })).catch(() => {});
 }
 
@@ -120,7 +150,10 @@ async function find(s: Ident) {
   cands = [];
   pick = 0;
   offset = 0;
-  info({ status: "searching", title: "", channel: "", index: 0, total: 0, offset: 0 });
+  nextToken = "";
+  moreQuery = "";
+  altIdx = 0;
+  info({ status: "searching", title: "", channel: "", index: 0, total: 0, offset: 0, more: true, loadingMore: false });
   // remembered choice for this song?
   try {
     const raw = await api.getSetting(cacheKey(s.key));
@@ -135,12 +168,14 @@ async function find(s: Ident) {
       }
     }
   } catch { /* search instead */ }
-  const items = await searchOnce(queryFor(s));
+  const found = await searchOnce(queryFor(s));
   if (my !== token) return;
-  if (!items) { info({ status: "offline", reason: lastReason }); return; }
+  if (!found) { info({ status: "offline", reason: lastReason }); return; }
+  nextToken = found.next;
+  moreQuery = queryFor(s);
   // when YouTube Music itself is the source, its own video id is a perfect match
   const ytId = getState().ytActive ? getState().yt?.videoId : null;
-  cands = rank(items, s, ytId);
+  cands = rank(found.items, s, ytId);
   // "Search again": don't land on the video that was just showing
   if (avoidId && cands.length > 1) {
     const i = cands.findIndex((c) => c.id === avoidId);
@@ -152,13 +187,52 @@ async function find(s: Ident) {
   openPick();
 }
 
-/** Show the next search result instead (wrong video). */
-export function nextVideo() {
-  if (cands.length < 2) return;
-  pick = (pick + 1) % cands.length;
+/** Fetch more results: YouTube's next page, then other searches for the same song. Returns how many were added. */
+async function loadMore(): Promise<number> {
+  if (!song || loadingMore) return 0;
+  const s = song;
+  const my = token;
+  loadingMore = true;
+  info({ loadingMore: true });
+  let added = 0;
+  try {
+    for (let tries = 0; tries < 4 && added === 0; tries++) {
+      let found: Found | null = null;
+      if (nextToken) found = await searchOnce(moreQuery, nextToken);
+      else if (!moreQuery) { moreQuery = queryFor(s); found = await searchOnce(moreQuery); }
+      else if (altIdx < ALTS(s).length) { moreQuery = ALTS(s)[altIdx++]; found = await searchOnce(moreQuery); }
+      else break;
+      if (my !== token) return 0;
+      if (!found) { nextToken = ""; continue; }
+      nextToken = found.next;
+      const have = new Set(cands.map((c) => c.id));
+      const fresh = rank(found.items.filter((c) => !have.has(c.id)), s, null);
+      cands.push(...fresh);
+      added += fresh.length;
+    }
+  } finally {
+    loadingMore = false;
+    if (my === token) info({ loadingMore: false, total: cands.length, more: !!nextToken || altIdx < ALTS(s).length });
+  }
+  return added;
+}
+
+/** Show the next search result instead (wrong video). Endless: more results load as you go. */
+export async function nextVideo() {
+  if (loadingMore) return;
+  if (pick + 1 >= cands.length) {
+    const added = await loadMore();
+    if (!added) {
+      if (cands.length < 2) return;
+      pick = -1; // nothing more anywhere: start over from the best match
+    }
+  }
+  pick += 1;
   offset = 0;
   saveChoice();
   openPick();
+  // keep one page ahead so the next click is instant
+  if (cands.length - pick <= 3) loadMore();
 }
 /** Shift the video against the music (seconds, + = video later in the song). */
 export function nudgeVideo(delta: number | null) {
@@ -275,7 +349,7 @@ export function initVideo() {
     if (p.kind === "results") {
       if (p.error) lastReason = String(p.error).replace(/^Error:\s*/, "");
       const cb = pending.get(p.tag || "");
-      cb?.(Array.isArray(p.items) ? p.items : null);
+      cb?.(Array.isArray(p.items) ? p.items : null, String(p.next || ""));
       return;
     }
     if (p.kind === "state") {
@@ -284,7 +358,13 @@ export function initVideo() {
       if (!expected || p.id !== expected) return;
       const wasReady = vs.ready;
       vs = { id: p.id, t: p.t, d: p.d, paused: p.paused, ready: !!p.ready, at: performance.now() };
-      if (vs.ready && getState().videoInfo.status !== "ready") { info({ status: "ready" }); window.setTimeout(prefetchNext, 1500); }
+      const vi = getState().videoInfo;
+      if (p.q && (p.q !== vi.quality || (p.lv || []).length !== (vi.levels || []).length)) info({ quality: p.q, levels: p.lv || [] });
+      if (vs.ready && vi.status !== "ready") {
+        info({ status: "ready" });
+        api.videoQuality(wantQuality).catch(() => {}); // the page may have been reloaded
+        window.setTimeout(prefetchNext, 1500);
+      }
       if (vs.ready !== wasReady) placeSoon();
     }
   });

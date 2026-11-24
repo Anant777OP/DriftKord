@@ -5,6 +5,7 @@ mod analysis;
 mod asio;
 mod audio;
 mod decoder;
+mod bio;
 mod dlna;
 mod dsp;
 mod stretch;
@@ -306,6 +307,29 @@ async fn import_paths(app: AppHandle, s: State<'_, AppState>, paths: Vec<String>
     Ok(out)
 }
 
+/// Artist biography (MusicBrainz + Wikipedia). Cached for two weeks (misses for two days).
+#[tauri::command]
+async fn artist_bio(s: State<'_, AppState>, artist: String, refresh: Option<bool>) -> R<bio::ArtistBio> {
+    let name = bio::primary_artist(&artist);
+    let key = format!("bio:{}", name.to_lowercase());
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    if !refresh.unwrap_or(false) {
+        if let Some(b) = s.lib.get_setting(&key).and_then(|j| serde_json::from_str::<bio::ArtistBio>(&j).ok()) {
+            // complete results keep two weeks; partial ones (MusicBrainz was busy) a day; misses two days
+            let ttl = if b.found && b.musicbrainz_url.is_some() { 14 * 86_400 } else if b.found { 86_400 } else { 2 * 86_400 };
+            if now - b.fetched_at < ttl {
+                return Ok(b);
+            }
+        }
+    }
+    let b = tauri::async_runtime::spawn_blocking(move || bio::lookup(&artist)).await.map_err(|e| e.to_string())?;
+    // don't remember a failure caused by being offline (nothing at all came back)
+    if b.found || b.musicbrainz_url.is_some() || b.fetched_at > 0 {
+        let _ = s.lib.set_setting(&key, &serde_json::to_string(&b).unwrap_or_default());
+    }
+    Ok(b)
+}
+
 #[tauri::command]
 fn set_cast_mute(on: bool) {
     audio::CAST_MUTE.store(on, std::sync::atomic::Ordering::SeqCst);
@@ -415,8 +439,8 @@ async fn playlist_set_items(s: State<'_, AppState>, id: i64, items: Vec<QueueIte
 // Music video view (muted YouTube page synced to whatever is playing). Window/webview work must be
 // async on Windows, or creating the view from a command deadlocks the UI thread.
 #[tauri::command]
-async fn video_search(app: AppHandle, query: String, tag: Option<String>) -> R<()> {
-    video::search(&app, &query, tag.as_deref().unwrap_or(""))
+async fn video_search(app: AppHandle, query: String, tag: Option<String>, cont: Option<String>) -> R<()> {
+    video::search(&app, &query, tag.as_deref().unwrap_or(""), cont.as_deref().unwrap_or(""))
 }
 #[tauri::command]
 async fn video_warm(app: AppHandle) -> R<()> {
@@ -438,6 +462,10 @@ async fn video_hide(app: AppHandle) -> R<()> {
 #[tauri::command]
 fn video_cmd(app: AppHandle, cmd: String, arg: Option<f64>) -> R<()> {
     video::control(&app, &cmd, arg)
+}
+#[tauri::command]
+fn video_quality(app: AppHandle, quality: String) -> R<()> {
+    video::quality(&app, &quality)
 }
 #[tauri::command]
 async fn video_close(app: AppHandle) -> R<()> {
@@ -952,6 +980,8 @@ fn main() {
             set_engine_options,
             dlna_discover,
             set_cast_mute,
+            video_quality,
+            artist_bio,
             dlna_play,
             dlna_control,
             dlna_status,

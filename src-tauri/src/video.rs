@@ -181,8 +181,12 @@ fn js_str(s: &str) -> String {
 
 /// Search YouTube for videos; results arrive as a `video-event` of kind "results".
 /// Fast path: a data request from inside the already-open page. First time: load the results page.
-pub fn search(app: &AppHandle, query: &str, tag: &str) -> Result<(), String> {
+pub fn search(app: &AppHandle, query: &str, tag: &str, cont: &str) -> Result<(), String> {
     let v = ensure(app)?;
+    if on_youtube(&v) && !loading() && !cont.is_empty() {
+        // "more results" for a search that already ran
+        return v.eval(&format!("window.__DKV&&__DKV.search({}, {}, {})", js_str(query), js_str(tag), js_str(cont))).map_err(|e| e.to_string());
+    }
     *PENDING.lock() = Some((query.to_string(), tag.to_string()));
     if loading() {
         return Ok(()); // runs as soon as the current load completes
@@ -255,6 +259,12 @@ pub fn control(app: &AppHandle, cmd: &str, arg: Option<f64>) -> Result<(), Strin
         _ => return Err(format!("unknown video command {cmd}")),
     };
     v.eval(&js).map_err(|e| e.to_string())
+}
+
+/// Video quality: "auto" | "max" | YouTube level ("hd1080", "hd720", "large" = 480p…).
+pub fn quality(app: &AppHandle, q: &str) -> Result<(), String> {
+    let Some(v) = app.get_webview(LABEL) else { return Ok(()) };
+    v.eval(&format!("window.__DKV&&__DKV.quality({})", js_str(q))).map_err(|e| e.to_string())
 }
 
 pub fn close(app: &AppHandle) {

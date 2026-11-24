@@ -81,7 +81,8 @@ You need Windows 10 (version 1809 or later) or Windows 11, 64-bit. Windows 11 al
 
 ### Listening
 - **Streaming tab:** YouTube Music, Spotify, Apple Music, TIDAL and Amazon Music each run inside the app and stay signed in. YouTube Music can be routed through DriftKord's own audio engine, so EQ and the other effects apply.
-- **Music videos:** the official video plays in sync with any song, from any source, on Now Playing, in the full-screen player or in Cinema Mode. Use **Wrong video? Next** or **Search again** if it picks the wrong one.
+- **Music videos:** the official video plays in sync with any song, from any source, on Now Playing, in the full-screen player or in Cinema Mode. Use **Wrong video? Next** (endless: more results load as you go) or **Search again** if it picks the wrong one, and the **Quality** picker (Auto, 360p to 4K, Max; 1080p by default).
+- **Artist biographies:** photo, origin, active years, genres and the full life story of whoever is playing (MusicBrainz + Wikipedia), on Now Playing and in the full-screen player.
 - **Lyrics:** time-synced lyrics are found automatically (LRCLIB), and timing is corrected for streaming delay. You can also use `.lrc` files, embedded lyrics, tap-to-sync or a manual search.
 - **Full-screen player** with large artwork or the video, lyrics and the queue. **Cinema Mode** shows the video full-screen with large synced lyrics.
 - **Auto-Play and Auto-DJ:** smart shuffle that learns from skips, radio, mood flow, and harmonic (Camelot) mixing with beat-matching.
@@ -155,7 +156,7 @@ DriftKord/
 
 ## Privacy
 
-DriftKord has no account, no telemetry and no analytics. It only goes online for the things you use: streaming services, lyrics (LRCLIB, which receives the song title and artist; you can turn it off), music videos (YouTube), and the scrobblers or Discord integration you choose to connect.
+DriftKord has no account, no telemetry and no analytics. It only goes online for the things you use: streaming services, lyrics (LRCLIB, which receives the song title and artist; you can turn it off), artist biographies (MusicBrainz and Wikipedia receive the artist name; you can turn it off), music videos (YouTube), and the scrobblers or Discord integration you choose to connect.
 
 ## Credits
 

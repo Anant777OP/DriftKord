@@ -7,6 +7,7 @@ import { useOwnLyrics } from "../lyrics";
 import { LyricsEmpty, LyricsStatusChip } from "./LyricsTools";
 import { live } from "../store";
 import { VideoBar, VideoSurface } from "./VideoSurface";
+import { ArtistPanel } from "./ArtistBio";
 import { shuffleAll } from "../autoplay";
 import { setState, toast, useStore, VizId } from "../store";
 import { isSynced, parseLrc, Visualizer, VISUALIZERS, lyricAt } from "../visualizers";
@@ -129,6 +130,7 @@ export function NowPlaying() {
       <VizPicker />
       <SignalPath />
       <LyricsPanel />
+      <ArtistPanel />
     </div>
   );
 }

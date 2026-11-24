@@ -381,6 +381,7 @@ export function Settings() {
   const [shell, setShell] = useState<ShellStatus | null>(null);
   const [focus, setFocus] = useState<FocusConfig | null>(null);
   const [onlineLyrics, setOnlineLyrics] = useState(false);
+  const [onlineBios, setOnlineBios] = useState(true);
   const status = useStore((s) => s.status);
   const fstate = useStore((s) => s.focus);
   const hudOpen = useStore((s) => s.hudOpen);
@@ -393,6 +394,7 @@ export function Settings() {
     api.shellStatus().then(setShell);
     api.getFocusConfig().then(setFocus);
     api.getSetting("onlineLyrics").then((v) => setOnlineLyrics(v !== "false"));
+    api.getSetting("onlineBios").then((v) => setOnlineBios(v !== "false"));
   }, []);
   const saveOut = (o: OutputConfig) => {
     setOut(o);
@@ -487,6 +489,8 @@ export function Settings() {
         <Panel title="Lyrics & privacy">
           <Toggle on={onlineLyrics} onChange={(v) => { setOnlineLyrics(v); api.setSetting("onlineLyrics", String(v)); }} label="Find lyrics online automatically (LRCLIB)" />
           <p className="muted small">On by default. Lyrics are found automatically for local files and every streaming service: embedded lyrics and .lrc files first, then lrclib.net (only the title, artist, album and length are sent). Results are cached on this PC.</p>
+          <Toggle on={onlineBios} onChange={(v) => { setOnlineBios(v); api.setSetting("onlineBios", String(v)); }} label="Show artist biographies (MusicBrainz + Wikipedia)" />
+          <p className="muted small">Only the artist's name is sent. Biographies are cached on this PC for two weeks.</p>
         </Panel>
       </div>
       <IntegrationsPanel />

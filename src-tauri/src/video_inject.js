@@ -40,16 +40,20 @@
     const p = String(txt).split(':').map(Number);
     return p.reduce((a, b) => a * 60 + b, 0) || 0;
   };
+  // Every video result in a search response (first page or a "more results" page), in order,
+  // plus the token that asks YouTube for the next page.
   function collect(data) {
     const d = data || window.ytInitialData;
-    const sections = d && d.contents && d.contents.twoColumnSearchResultsRenderer && d.contents.twoColumnSearchResultsRenderer.primaryContents.sectionListRenderer.contents;
-    if (!sections) return null;
+    if (!d) return null;
     const items = [];
-    for (const sec of sections) {
-      const list = (sec.itemSectionRenderer && sec.itemSectionRenderer.contents) || [];
-      for (const it of list) {
-        const v = it.videoRenderer;
-        if (!v || !v.videoId) continue;
+    let next = '';
+    const seen = new Set();
+    const walk = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 40) return;
+      if (Array.isArray(o)) { for (const x of o) walk(x, depth + 1); return; }
+      const v = o.videoRenderer;
+      if (v && v.videoId && !seen.has(v.videoId)) {
+        seen.add(v.videoId);
         items.push({
           id: v.videoId,
           title: (v.title && v.title.runs && v.title.runs.map((r) => r.text).join('')) || '',
@@ -57,10 +61,19 @@
           duration: secs(v.lengthText && v.lengthText.simpleText),
           verified: !!(v.ownerBadges && JSON.stringify(v.ownerBadges).match(/VERIFIED|OFFICIAL_ARTIST/)),
         });
-        if (items.length >= 12) break;
+        return;
       }
-      if (items.length >= 12) break;
-    }
+      const c = o.continuationItemRenderer;
+      if (c) {
+        const t = c.continuationEndpoint && c.continuationEndpoint.continuationCommand && c.continuationEndpoint.continuationCommand.token;
+        if (t) next = t;
+        return;
+      }
+      for (const k in o) if (k !== 'videoRenderer') walk(o[k], depth + 1);
+    };
+    walk(d.contents || d.onResponseReceivedCommands || d, 0);
+    if (!items.length && !next && !(d.contents || d.onResponseReceivedCommands)) return null;
+    items.next = next;
     return items;
   }
   if (location.pathname === '/results') {
@@ -101,6 +114,38 @@
     return '';
   }
   let lastReason = '';
+
+  // ---- video quality. YouTube's "auto" picks from the player's size, which is small while the view
+  // waits off-screen, so a fixed choice is held instead (remembered for this page across reloads).
+  const QUALITY_ORDER = ['tiny', 'small', 'medium', 'large', 'hd720', 'hd1080', 'hd1440', 'hd2160', 'highres'];
+  let wantQ = 'hd1080';
+  try { wantQ = localStorage.getItem('dkvQuality') || 'hd1080'; } catch (_) {}
+  let lastQApply = 0;
+  function pickQuality(levels) {
+    const avail = (levels || []).filter((l) => QUALITY_ORDER.includes(l));
+    if (!avail.length) return '';
+    if (wantQ === 'max') return avail.slice().sort((a, b) => QUALITY_ORDER.indexOf(b) - QUALITY_ORDER.indexOf(a))[0];
+    const cap = QUALITY_ORDER.indexOf(wantQ);
+    const ok = avail.filter((l) => QUALITY_ORDER.indexOf(l) <= cap).sort((a, b) => QUALITY_ORDER.indexOf(b) - QUALITY_ORDER.indexOf(a));
+    return ok[0] || avail.sort((a, b) => QUALITY_ORDER.indexOf(a) - QUALITY_ORDER.indexOf(b))[0];
+  }
+  function applyQuality(force) {
+    const p = document.getElementById('movie_player');
+    if (!p || typeof p.getAvailableQualityLevels !== 'function') return;
+    if (!force && Date.now() - lastQApply < 1500) return;
+    lastQApply = Date.now();
+    try {
+      if (wantQ === 'auto') {
+        if (force && p.setPlaybackQualityRange) p.setPlaybackQualityRange('auto', 'auto');
+        return;
+      }
+      const q = pickQuality(p.getAvailableQualityLevels());
+      if (!q) return;
+      if (p.getPlaybackQuality && p.getPlaybackQuality() === q && !force) return;
+      if (p.setPlaybackQualityRange) p.setPlaybackQualityRange(q, q);
+      if (p.setPlaybackQuality) p.setPlaybackQuality(q);
+    } catch (_) {}
+  }
 
   let wantPlaying = false;
   let stuck = { id: '', since: 0, tries: 0 };
@@ -144,12 +189,15 @@
       if (stuck.tries === 1) { try { player.loadVideoById({ videoId: vid, startSeconds: el.currentTime || 0 }); } catch (_) {} }
       else if (stuck.tries === 2) { location.assign('/watch?v=' + encodeURIComponent(vid)); }
     }
-    post({ kind: 'state', id: (vd && vd.video_id) || new URLSearchParams(location.search).get('v'), t: el.currentTime, d: isFinite(el.duration) ? el.duration : 0, paused: el.paused, ended: el.ended, ready: el.readyState >= 2 && !ad, ad, w: el.videoWidth, h: el.videoHeight });
+    if (!ad) applyQuality(false);
+    let q = '', lv = [];
+    try { q = player.getPlaybackQuality ? player.getPlaybackQuality() : ''; lv = player.getAvailableQualityLevels ? player.getAvailableQualityLevels() : []; } catch (_) {}
+    post({ kind: 'state', id: (vd && vd.video_id) || new URLSearchParams(location.search).get('v'), t: el.currentTime, d: isFinite(el.duration) ? el.duration : 0, paused: el.paused, ended: el.ended, ready: el.readyState >= 2 && !ad, ad, w: el.videoWidth, h: el.videoHeight, q, lv });
   }, 250);
 
   // Search through YouTube's own data endpoint from inside this page: a small JSON request instead
   // of loading a whole results page (much faster).
-  async function search(q, tag) {
+  async function search(q, tag, cont) {
     // only a loaded YouTube page can search; elsewhere (blank page while loading) stay quiet so the
     // pending search is retried once YouTube has loaded
     if (!/(^|\.)youtube\.com$/.test(location.hostname)) return false;
@@ -161,10 +209,11 @@
       if (!key || !ctx) throw new Error(unblock() || 'YouTube page did not load');
       const r = await fetch('/youtubei/v1/search?prettyPrint=false&key=' + encodeURIComponent(key), {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: ctx, query: q, params: 'EgIQAQ==' }),
+        body: JSON.stringify(cont ? { context: ctx, continuation: cont } : { context: ctx, query: q, params: 'EgIQAQ==' }),
       });
       const j = await r.json();
-      post({ kind: 'results', query: q, tag: tag || '', items: collect(j) || [] });
+      const items = collect(j) || [];
+      post({ kind: 'results', query: q, tag: tag || '', items, next: items.next || '' });
       return true;
     } catch (e) {
       post({ kind: 'results', query: q, tag: tag || '', items: null, error: String(e) });
@@ -180,7 +229,9 @@
       const cur = p.getVideoData && p.getVideoData();
       const el = video();
       if (cur && cur.video_id === id && el && el.readyState >= 2) { el.currentTime = Math.max(0, start || 0); return true; }
-      p.loadVideoById({ videoId: id, startSeconds: Math.max(0, start || 0) });
+      p.loadVideoById({ videoId: id, startSeconds: Math.max(0, start || 0), suggestedQuality: wantQ === 'max' ? 'highres' : wantQ });
+      setTimeout(() => applyQuality(true), 600);
+      setTimeout(() => applyQuality(true), 2500);
       history.replaceState(history.state, '', '/watch?v=' + encodeURIComponent(id));
       return true;
     } catch (_) { return false; }
@@ -193,5 +244,10 @@
     pause() { wantPlaying = false; const el = video(); if (el) el.pause(); },
     seek(t) { const el = video(); if (el && isFinite(t)) el.currentTime = Math.max(0, t); },
     rate(r) { const el = video(); if (el) el.playbackRate = Math.max(0.5, Math.min(2, r)); },
+    quality(q) {
+      wantQ = q === 'max' || q === 'auto' || QUALITY_ORDER.includes(q) ? q : 'hd1080';
+      try { localStorage.setItem('dkvQuality', wantQ); } catch (_) {}
+      applyQuality(true);
+    },
   };
 })();

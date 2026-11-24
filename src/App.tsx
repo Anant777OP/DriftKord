@@ -12,6 +12,7 @@ import { setAutoPlay, toggleFavorite } from "./autoplay";
 import { initAdaptive } from "./adaptive";
 import { Library, Playlists, Queue } from "./features/Library";
 import { CinemaMode, NowPlaying, SignalPath } from "./features/NowPlaying";
+import { ArtistBioView } from "./features/ArtistBio";
 import { Metadata, Settings, Streaming, Themes } from "./features/System";
 import { Soundscapes } from "./features/Soundscapes";
 import { initIntegrations } from "./integrations";
@@ -618,13 +619,16 @@ function FullPlayer() {
               <button role="tab" aria-selected={tab === "lyrics"} className={tab === "lyrics" ? "on" : ""} onClick={() => setState({ fullPlayerTab: "lyrics" })}>
                 <Icon name="lyrics" size={14} /> Lyrics
               </button>
+              <button role="tab" aria-selected={tab === "artist"} className={tab === "artist" ? "on" : ""} onClick={() => setState({ fullPlayerTab: "artist" })}>
+                <Icon name="disc" size={14} /> Artist
+              </button>
             </div>
             <button className={`fp-vid-toggle ${videoMode ? "on" : ""}`} onClick={() => setState({ videoMode: !videoMode })} title="Show the music video instead of the album art">
               <Icon name="cinema" size={14} /> {videoMode ? "Video" : "Art"}
             </button>
             <IconButton icon="close" title="Close (Esc)" size={16} onClick={() => setState({ fullPlayer: false })} className="fp-close" />
           </div>
-          <div className="fp-panel">{tab === "lyrics" ? <FullPlayerLyrics /> : <FullPlayerQueue />}</div>
+          <div className="fp-panel">{tab === "lyrics" ? <FullPlayerLyrics /> : tab === "artist" ? <div className="fp-artist-bio"><ArtistBioView compact /></div> : <FullPlayerQueue />}</div>
         </section>
       </div>
     </div>
